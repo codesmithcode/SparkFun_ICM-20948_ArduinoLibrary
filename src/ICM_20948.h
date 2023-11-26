@@ -9,10 +9,160 @@ A C++ interface to the ICM-20948
 
 #include "util/ICM_20948_C.h" // The C backbone. ICM_20948_USE_DMP is defined in here.
 #include "util/AK09916_REGISTERS.h"
+#include "FreeRTOS.h"
+#include "cmsis_os.h"
+#include <stdio.h>
+#include "stm32f3xx_hal.h"
 
+
+#define ICM_20948_STM32
+
+#ifndef ICM_20948_STM32
 #include "Arduino.h" // Arduino support
 #include "Wire.h"
 #include "SPI.h"
+#endif
+
+#ifdef ICM_20948_STM32
+
+inline void delay(int millis) {
+	const TickType_t delayTicks = pdMS_TO_TICKS(millis);
+	osDelay(delayTicks);
+};
+
+// Fake out type
+class Stream {
+public:
+	void print(char ch) {
+		printf("%c", ch);
+	}
+	void println(){
+		printf("\n\r");
+	}
+};
+
+static Stream Serial;
+
+class TwoWire {
+public:
+	TwoWire(I2C_HandleTypeDef& hi2c) : hi2c(hi2c) {}
+
+	void beginTransmission(uint8_t addr) {
+		// indicate that we are transmitting
+		transmitting = 1;
+		// set address of targeted slave
+		txAddress = addr;
+		// reset tx buffer iterator vars
+		txBufferIndex = 0;
+		txBufferLength = 0;
+	}
+
+
+	void endTransmission() {
+		endTransmission(true);
+	}
+
+	void endTransmission(bool sendStop) {
+		// transmit buffer (blocking)
+//		uint8_t ret = twi_writeTo(txAddress, txBuffer, txBufferLength, 1,
+//				sendStop);
+		//HAL_I2C_Mem_Write(&hi2c, ICM_20948_I2C_ADDR_AD1, txAddress, txBufferLength, txBuffer, txBufferLength, TIMEOUT_MS);
+		HAL_I2C_Master_Transmit(&hi2c, txAddress, txBuffer, txBufferLength, TIMEOUT_MS);
+
+		// reset tx buffer iterator vars
+		txBufferIndex = 0;
+		txBufferLength = 0;
+		// indicate that we are done transmitting
+		transmitting = 0;
+	}
+
+
+	size_t write(uint8_t reg) {
+		if (txBufferLength >= BUFFER_LEN) {
+			return 0;
+		}
+		txBuffer[txBufferIndex++] = reg;
+		txBufferLength = txBufferIndex;
+		return 1;
+	}
+
+
+	size_t write(uint8_t *data, uint8_t len) {
+		for (int i = 0; i < len; ++i) {
+			write(data[i]);
+		}
+		return len;
+	}
+
+
+	uint8_t read() {
+		int value = -1;
+
+		// get each successive byte on each call
+		if (rxBufferIndex < rxBufferLength) {
+			value = rxBuffer[rxBufferIndex];
+			++rxBufferIndex;
+		}
+
+		return value;
+	}
+
+
+	uint32_t requestFrom(uint8_t address, uint32_t quantity) {
+//		if (isize > 0) {
+//			// send internal address; this mode allows sending a repeated start to access
+//			// some devices' internal registers. This function is executed by the hardware
+//			// TWI module on other processors (for example Due's TWI_IADR and TWI_MMR registers)
+//
+//			beginTransmission (address);
+//
+//			// the maximum size of internal address is 3 bytes
+//			if (isize > 3) {
+//				isize = 3;
+//			}
+//
+//			// write internal register address - most significant byte first
+//			while (isize-- > 0)
+//				write((uint8_t) (iaddress >> (isize * 8)));
+//			endTransmission(false);
+//		}
+
+		// clamp to buffer length
+		if (quantity > BUFFER_LEN) {
+			quantity = BUFFER_LEN;
+		}
+		// perform blocking read into buffer
+		//uint8_t read = twi_readFrom(address, rxBuffer, quantity, sendStop);
+		//HAL_I2C_Mem_Read(&hi2c, ICM_20948_I2C_ADDR_AD1, address, quantity, rxBuffer, quantity, TIMEOUT_MS);
+		HAL_I2C_Master_Receive(&hi2c, address, rxBuffer, quantity, TIMEOUT_MS);
+		uint8_t read = quantity;
+
+		// set rx buffer iterator vars
+		rxBufferIndex = 0;
+		rxBufferLength = read;
+
+		return read;
+	}
+
+private:
+	const static size_t BUFFER_LEN = 64;
+	const uint32_t TIMEOUT_MS = 1000;
+	I2C_HandleTypeDef& hi2c;
+
+	bool transmitting;
+	uint8_t rxBuffer[BUFFER_LEN];
+	uint8_t rxBufferIndex;
+	uint8_t rxBufferLength;
+
+	uint8_t txAddress;
+	uint8_t txBuffer[BUFFER_LEN];
+	uint8_t txBufferIndex;
+	uint8_t txBufferLength;
+};
+
+//extern TwoWire Wire;
+
+#endif
 
 #define ICM_20948_ARD_UNUSED_PIN 0xFF
 
@@ -64,9 +214,9 @@ public:
 
   // gfvalvo's flash string helper code: https://forum.arduino.cc/index.php?topic=533118.msg3634809#msg3634809
   void debugPrint(const char *);
-  void debugPrint(const __FlashStringHelper *);
+  //void debugPrint(const __FlashStringHelper *);
   void debugPrintln(const char *);
-  void debugPrintln(const __FlashStringHelper *);
+  //void debugPrintln(const __FlashStringHelper *);
   void doDebugPrint(char (*)(const char *), const char *, bool newLine = false);
 
   void debugPrintf(int i);
@@ -238,6 +388,8 @@ public:
   ICM_20948_Status_e initializeDMP(void) __attribute__((weak)); // Combine all of the DMP start-up code in one place. Can be overwritten if required
 };
 
+#ifndef ICM_20948_STM32
+
 // I2C
 
 // Forward declarations of TwoWire and Wire for board/variant combinations that don't have a default 'SPI'
@@ -283,5 +435,23 @@ public:
 
   ICM_20948_Status_e begin(uint8_t csPin, SPIClass &spiPort = SPI, uint32_t SPIFreq = ICM_20948_SPI_DEFAULT_FREQ);
 };
+#else
+
+class ICM_20948_I2C: public ICM_20948 {
+public:
+	TwoWire *_i2c;
+	uint8_t _addr;
+	uint8_t _ad0;
+	bool _ad0val;
+	ICM_20948_Serif_t _serif;
+
+	ICM_20948_I2C(); // Constructor
+
+	virtual ICM_20948_Status_e begin(TwoWire &wirePort, bool ad0val =
+			true, uint8_t ad0pin = ICM_20948_ARD_UNUSED_PIN);
+
+};
+
+#endif
 
 #endif /* _ICM_20948_H_ */

@@ -2,6 +2,7 @@
 
 #include "util/ICM_20948_REGISTERS.h"
 #include "util/AK09916_REGISTERS.h"
+#include <stdio.h>
 
 // Forward Declarations
 ICM_20948_Status_e ICM_20948_write_I2C(uint8_t reg, uint8_t *data, uint32_t len, void *user);
@@ -32,24 +33,24 @@ void ICM_20948::debugPrint(const char *line)
 {
   doDebugPrint([](const char *ptr) { return *ptr; }, line);
 }
-
+/*
 void ICM_20948::debugPrint(const __FlashStringHelper *line)
 {
   doDebugPrint([](const char *ptr) { return (char)pgm_read_byte_near(ptr); },
                (const char *)line);
 }
-
+*/
 void ICM_20948::debugPrintln(const char *line)
 {
   doDebugPrint([](const char *ptr) { return *ptr; }, line, true);
 }
-
+/*
 void ICM_20948::debugPrintln(const __FlashStringHelper *line)
 {
   doDebugPrint([](const char *ptr) { return (char)pgm_read_byte_near(ptr); },
                (const char *)line, true);
 }
-
+*/
 void ICM_20948::doDebugPrint(char (*funct)(const char *), const char *string, bool newLine)
 {
   if (_printDebug == false)
@@ -82,6 +83,8 @@ void ICM_20948::debugPrintf(float f)
 
 void ICM_20948::debugPrintStatus(ICM_20948_Status_e stat)
 {
+#define F(X) X
+
   switch (stat)
   {
   case ICM_20948_Stat_Ok:
@@ -1703,6 +1706,8 @@ ICM_20948_Status_e ICM_20948::initializeDMP(void)
   return worstResult;
 }
 
+#ifndef ICM_20948_STM32
+
 // I2C
 ICM_20948_I2C::ICM_20948_I2C()
 {
@@ -1770,6 +1775,74 @@ ICM_20948_Status_e ICM_20948_I2C::begin(TwoWire &wirePort, bool ad0val, uint8_t 
   }
   return status;
 }
+#else
+ICM_20948_I2C::ICM_20948_I2C()
+{
+}
+
+ICM_20948_Status_e ICM_20948_I2C::begin(TwoWire &wirePort, bool ad0val, uint8_t ad0pin)
+{
+  // Associate
+  _ad0 = ad0pin;
+  _i2c = &wirePort;
+  _ad0val = ad0val;
+
+  _addr = ICM_20948_I2C_ADDR_AD0;
+  if (_ad0val)
+  {
+    _addr = ICM_20948_I2C_ADDR_AD1;
+  }
+
+//  // Set pinmodes
+//  if (_ad0 != ICM_20948_ARD_UNUSED_PIN)
+//  {
+//    pinMode(_ad0, OUTPUT);
+//  }
+//
+//  // Set pins to default positions
+//  if (_ad0 != ICM_20948_ARD_UNUSED_PIN)
+//  {
+//    digitalWrite(_ad0, _ad0val);
+//  }
+
+  // _i2c->begin(); // Moved into user's sketch
+
+  // Set up the serif
+  _serif.write = ICM_20948_write_I2C;
+  _serif.read = ICM_20948_read_I2C;
+  _serif.user = (void *)this; // refer to yourself in the user field
+
+  // Link the serif
+  _device._serif = &_serif;
+
+#if defined(ICM_20948_USE_DMP)
+  _device._dmp_firmware_available = true; // Initialize _dmp_firmware_available
+#else
+  _device._dmp_firmware_available = false; // Initialize _dmp_firmware_available
+#endif
+
+  _device._firmware_loaded = false; // Initialize _firmware_loaded
+  _device._last_bank = 255;         // Initialize _last_bank. Make it invalid. It will be set by the first call of ICM_20948_set_bank.
+  _device._last_mems_bank = 255;    // Initialize _last_mems_bank. Make it invalid. It will be set by the first call of inv_icm20948_write_mems.
+  _device._gyroSF = 0;              // Use this to record the GyroSF, calculated by inv_icm20948_set_gyro_sf
+  _device._gyroSFpll = 0;
+  _device._enabled_Android_0 = 0;      // Keep track of which Android sensors are enabled: 0-31
+  _device._enabled_Android_1 = 0;      // Keep track of which Android sensors are enabled: 32-
+  _device._enabled_Android_intr_0 = 0; // Keep track of which Android sensor interrupts are enabled: 0-31
+  _device._enabled_Android_intr_1 = 0; // Keep track of which Android sensor interrupts are enabled: 32-
+
+  // Perform default startup
+  // Do a minimal startupDefault if using the DMP. User can always call startupDefault(false) manually if required.
+  status = startupDefault(_device._dmp_firmware_available);
+  if (status != ICM_20948_Stat_Ok)
+  {
+    debugPrint("ICM_20948_I2C::begin: startupDefault returned: ");
+    debugPrintStatus(status);
+    debugPrintln("");
+  }
+  return status;
+}
+#endif
 
 ICM_20948_Status_e ICM_20948::startupMagnetometer(bool minimal)
 {
@@ -1901,6 +1974,8 @@ ICM_20948_Status_e ICM_20948::magWhoIAm(void)
   return status;
 }
 
+#ifndef ICM_20948_STM32
+
 // SPI
 
 // SPISettings ICM_20948_SPI_DEFAULT_SETTINGS(ICM_20948_SPI_DEFAULT_FREQ, ICM_20948_SPI_DEFAULT_ORDER, ICM_20948_SPI_DEFAULT_MODE);
@@ -1968,6 +2043,7 @@ ICM_20948_Status_e ICM_20948_SPI::begin(uint8_t csPin, SPIClass &spiPort, uint32
 
   return status;
 }
+#endif
 
 // serif functions for the I2C and SPI classes
 ICM_20948_Status_e ICM_20948_write_I2C(uint8_t reg, uint8_t *data, uint32_t len, void *user)
@@ -2040,6 +2116,8 @@ ICM_20948_Status_e ICM_20948_read_I2C(uint8_t reg, uint8_t *buff, uint32_t len, 
   return ICM_20948_Stat_Ok;
 }
 
+#ifndef ICM_20948_STM32
+
 ICM_20948_Status_e ICM_20948_write_SPI(uint8_t reg, uint8_t *data, uint32_t len, void *user)
 {
   if (user == NULL)
@@ -2109,5 +2187,6 @@ ICM_20948_Status_e ICM_20948_read_SPI(uint8_t reg, uint8_t *buff, uint32_t len, 
 
   return ICM_20948_Stat_Ok;
 }
+#endif
 
 
