@@ -67,7 +67,7 @@ public:
 //		uint8_t ret = twi_writeTo(txAddress, txBuffer, txBufferLength, 1,
 //				sendStop);
 		//HAL_I2C_Mem_Write(&hi2c, ICM_20948_I2C_ADDR_AD1, txAddress, txBufferLength, txBuffer, txBufferLength, TIMEOUT_MS);
-		HAL_I2C_Master_Transmit(&hi2c, txAddress, txBuffer, txBufferLength, TIMEOUT_MS);
+		HAL_I2C_Master_Transmit(&hi2c, txAddress << 1, txBuffer, txBufferLength, TIMEOUT_MS);
 
 		// reset tx buffer iterator vars
 		txBufferIndex = 0;
@@ -134,7 +134,7 @@ public:
 		// perform blocking read into buffer
 		//uint8_t read = twi_readFrom(address, rxBuffer, quantity, sendStop);
 		//HAL_I2C_Mem_Read(&hi2c, ICM_20948_I2C_ADDR_AD1, address, quantity, rxBuffer, quantity, TIMEOUT_MS);
-		HAL_I2C_Master_Receive(&hi2c, address, rxBuffer, quantity, TIMEOUT_MS);
+		HAL_I2C_Master_Receive(&hi2c, address << 1, rxBuffer, quantity, TIMEOUT_MS);
 		uint8_t read = quantity;
 
 		// set rx buffer iterator vars
