@@ -317,6 +317,7 @@ public:
 
   //FIFO
   ICM_20948_Status_e enableFIFO(bool enable = true);
+  ICM_20948_Status_e configureFIFO(void);
   ICM_20948_Status_e resetFIFO(void);
   ICM_20948_Status_e setFIFOmode(bool snapshot = false); // Default to Stream (non-Snapshot) mode
   ICM_20948_Status_e getFIFOcount(uint16_t *count);

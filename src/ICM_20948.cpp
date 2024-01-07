@@ -1226,7 +1226,7 @@ ICM_20948_Status_e ICM_20948::startupDefault(bool minimal)
     return status;
   }
 
-  retval = enableDLPF(ICM_20948_Internal_Acc, false);
+  retval = enableDLPF(ICM_20948_Internal_Acc, true);
   if (retval != ICM_20948_Stat_Ok)
   {
     debugPrint(F("ICM_20948::startupDefault: enableDLPF (Acc) returned: "));
@@ -1236,7 +1236,7 @@ ICM_20948_Status_e ICM_20948::startupDefault(bool minimal)
     return status;
   }
 
-  retval = enableDLPF(ICM_20948_Internal_Gyr, false);
+  retval = enableDLPF(ICM_20948_Internal_Gyr, true);
   if (retval != ICM_20948_Stat_Ok)
   {
     debugPrint(F("ICM_20948::startupDefault: enableDLPF (Gyr) returned: "));
@@ -1246,6 +1246,20 @@ ICM_20948_Status_e ICM_20948::startupDefault(bool minimal)
     return status;
   }
 
+  ICM_20948_smplrt_t mySmplrt;
+  //mySmplrt.g = 19; // ODR is computed as follows: 1.1 kHz/(1+GYRO_SMPLRT_DIV[7:0]). 19 = 55Hz. InvenSense Nucleo example uses 19 (0x13).
+  //mySmplrt.a = 19; // ODR is computed as follows: 1.125 kHz/(1+ACCEL_SMPLRT_DIV[11:0]). 19 = 56.25Hz. InvenSense Nucleo example uses 19 (0x13).
+  mySmplrt.g = 12; // 84.6Hz
+  mySmplrt.a = 12; // 86.5Hz
+  retval = setSampleRate((ICM_20948_Internal_Acc | ICM_20948_Internal_Gyr), mySmplrt);
+  if (retval != ICM_20948_Stat_Ok)
+  {
+    debugPrint(F("ICM_20948::startupDefault: setSampleRate returned: "));
+    debugPrintStatus(retval);
+    debugPrintln(F(""));
+    status = retval;
+    return status;
+  }
   return status;
 }
 
@@ -1291,6 +1305,30 @@ ICM_20948_Status_e ICM_20948::enableFIFO(bool enable)
 {
   status = ICM_20948_enable_FIFO(&_device, enable);
   return status;
+}
+
+ICM_20948_Status_e ICM_20948::configureFIFO()
+{
+  uint8_t zero = 0;
+  uint8_t one_e = 0x1E; // Enable accel + gyro, disable temperature
+
+  ICM_20948_Status_e  worstResult = ICM_20948_Stat_Ok;
+
+  status = setBank(0); // Select Bank 0
+  if (status > worstResult) {
+	  worstResult = status;
+  }
+
+  status = write(AGB0_REG_FIFO_EN_1, &zero, 1);
+  if (status > worstResult) {
+   worstResult = status;
+  }
+  status = write(AGB0_REG_FIFO_EN_2, &one_e, 1);
+  if (status > worstResult) {
+   worstResult = status;
+  }
+
+  return worstResult;
 }
 
 ICM_20948_Status_e ICM_20948::resetFIFO(void)
